@@ -16,6 +16,7 @@ export default defineConfig({
     splitVendorChunkPlugin(),
   ],
   define: {
-    'import.meta.env.VITE_BASE_API': JSON.stringify('/api/')
+    'import.meta.env.VITE_BASE_API': JSON.stringify('/api/'),
+    'import.meta.env.VITE_DOMAIN': JSON.stringify('home.turkmendili.ru')
   }
 });
