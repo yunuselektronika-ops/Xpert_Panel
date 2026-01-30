@@ -39,7 +39,7 @@ def core_health_check():
 
 @app.on_event("startup")
 def start_core():
-    if not xray.XRAY_ENABLED:
+    if not xray.XRAY_ENABLED or xray.config is None:
         logger.warning("Xray not available - skipping core startup (subscription aggregation mode)")
         return
     
