@@ -193,6 +193,32 @@ export const XpertPanel: FC = () => {
     }
   };
 
+  const handleSyncMarzban = async () => {
+    setUpdating(true);
+    try {
+      const result = await fetch("/api/xpert/sync-marzban", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      });
+      const data = await result.json();
+      toast({
+        title: "Marzban sync complete",
+        description: `${data.total_synced || 0} configs synced to Marzban`,
+        status: "success",
+        duration: 5000,
+      });
+      fetchData();
+    } catch (error) {
+      toast({
+        title: "Error syncing to Marzban",
+        status: "error",
+        duration: 3000,
+      });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const handleUpdate = async () => {
     setUpdating(true);
     try {
@@ -285,6 +311,14 @@ export const XpertPanel: FC = () => {
                   isLoading={updating}
                 >
                   Update Now
+                </Button>
+                <Button
+                  leftIcon={<RepeatIcon />}
+                  colorScheme="purple"
+                  onClick={handleSyncMarzban}
+                  isLoading={updating}
+                >
+                  Sync to Marzban
                 </Button>
                 <Button colorScheme="green" onClick={onOpen}>
                   Add Source

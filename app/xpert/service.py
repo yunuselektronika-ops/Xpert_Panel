@@ -7,6 +7,7 @@ from typing import List, Optional
 from app.xpert.models import SubscriptionSource, AggregatedConfig
 from app.xpert.storage import storage
 from app.xpert.checker import checker
+from app.xpert.marzban_integration import marzban_integration
 import config as app_config
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,19 @@ class XpertService:
         
         storage.save_configs(all_configs)
         logger.info(f"Subscription update complete: {active_configs}/{total_configs} active configs")
+        
+        # Синхронизация с Marzban
+        try:
+            sync_result = marzban_integration.sync_active_configs_to_marzban()
+            logger.info(f"Marzban sync result: {sync_result}")
+            
+            # Очистка неактивных хостов
+            cleanup_result = marzban_integration.cleanup_inactive_hosts(all_configs)
+            logger.info(f"Marzban cleanup result: {cleanup_result}")
+            
+        except Exception as e:
+            logger.error(f"Marzban integration failed: {e}")
+        
         return {"active_configs": active_configs, "total_configs": total_configs}
     
     def generate_subscription(self, format: str = "universal") -> str:

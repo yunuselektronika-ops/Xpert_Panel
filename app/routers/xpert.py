@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from app.xpert.service import xpert_service
+from app.xpert.marzban_integration import marzban_integration
 import config
 
 router = APIRouter(prefix="/xpert", tags=["Xpert Panel"])
@@ -122,6 +123,16 @@ async def get_configs():
         }
         for c in configs
     ]
+
+
+@router.post("/sync-marzban")
+async def sync_to_marzban():
+    """Принудительная синхронизация с Marzban"""
+    try:
+        result = marzban_integration.sync_active_configs_to_marzban()
+        return {"success": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/sub")
