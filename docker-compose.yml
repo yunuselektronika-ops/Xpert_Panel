@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  xpert:
+    build: .
+    container_name: xpert-panel
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DOMAIN=home.turkmendili.ru
+      - UPDATE_INTERVAL=1
+      - MAX_PING_MS=300
+      - MAX_CONFIGS=100
+      - DATA_DIR=/app/data
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
