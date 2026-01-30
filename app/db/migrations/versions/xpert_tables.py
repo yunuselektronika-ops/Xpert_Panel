@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 revision = 'xpert_001'
-down_revision = None
-branch_labels = ('xpert',)
+down_revision = '015cf1dc6eca'
+branch_labels = None
 depends_on = None
 
 
