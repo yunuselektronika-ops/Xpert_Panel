@@ -44,6 +44,60 @@ STATUS_TEXTS = {
 }
 
 
+def replace_server_names_with_flags(config_raw: str) -> str:
+    """Заменяет имена серверов на флаги стран в конфигурации"""
+    try:
+        import config as app_config
+        
+        # Если флаги отключены в настройках, возвращаем как есть
+        if not app_config.XPERT_USE_COUNTRY_FLAGS:
+            return config_raw
+            
+        from app.xpert.geo_service import geo_service
+        import re
+        
+        # Регулярное выражение для поиска имен серверов в различных форматах
+        # Поддерживает vless, vmess, trojan, shadowsocks и другие протоколы
+        
+        # Ищем паттерны вида: name=ServerName или "ServerName"
+        name_pattern = r'(name="?([^"=,]+)"?)'
+        
+        def replace_name(match):
+            full_match = match.group(1)
+            server_name = match.group(2)
+            
+            # Если имя уже содержит флаг (emoji), не меняем его
+            if any(ord(char) > 127 for char in server_name):
+                return full_match
+            
+            # Пробуем определить страну по имени сервера
+            # Если имя похоже на домен, используем геолокацию
+            if '.' in server_name and not server_name.startswith('http'):
+                # Это похоже на домен
+                try:
+                    country_info = geo_service.get_country_info(server_name.split(':')[0])
+                    flag_name = f"{country_info['flag']} {country_info['code']}"
+                    return full_match.replace(server_name, flag_name)
+                except:
+                    pass
+            
+            # Если не удалось определить, оставляем как есть
+            return full_match
+        
+        # Применяем замену
+        result = re.sub(name_pattern, replace_name, config_raw)
+        
+        # Дополнительная обработка для remark полей в некоторых форматах
+        remark_pattern = r'(remark="?([^"=,]+)"?)'
+        result = re.sub(remark_pattern, replace_name, result)
+        
+        return result
+        
+    except Exception as e:
+        # Если что-то пошло не так, возвращаем оригинал
+        return config_raw
+
+
 def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, reverse: bool) -> list:
     format_variables = setup_format_variables(extra_data)
     conf = V2rayShareLink()
@@ -101,7 +155,9 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
             pass
         
         for config in xpert_configs:
-            conf.add_link(config.raw)
+            # Заменяем имя сервера на флаг страны
+            config_with_flags = replace_server_names_with_flags(config.raw)
+            conf.add_link(config_with_flags)
             
     except Exception as e:
         # Если Xpert Panel не настроен, просто игнорируем
@@ -380,8 +436,14 @@ def process_inbounds_and_tags(
                     }
                 )
 
+                # Заменяем имя сервера на флаг страны
+                original_remark = host["remark"].format_map(format_variables)
+                flag_remark = replace_server_names_with_flags(f"name={original_remark}")
+                # Извлекаем только имя с флагом
+                flag_remark = flag_remark.replace("name=", "").strip('"')
+                
                 conf.add(
-                    remark=host["remark"].format_map(format_variables),
+                    remark=flag_remark,
                     address=address.format_map(format_variables),
                     inbound=host_inbound,
                     settings=settings.model_dump()
