@@ -15,4 +15,7 @@ export default defineConfig({
     visualizer(),
     splitVendorChunkPlugin(),
   ],
+  define: {
+    'import.meta.env.VITE_BASE_API': JSON.stringify('/api/')
+  }
 });
