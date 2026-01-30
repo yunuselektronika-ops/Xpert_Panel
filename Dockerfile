@@ -40,6 +40,7 @@ RUN rm -rf $PYTHON_LIB_PATH/*
 COPY --from=python-build $PYTHON_LIB_PATH $PYTHON_LIB_PATH
 COPY --from=python-build /usr/local/bin /usr/local/bin
 COPY --from=python-build /usr/local/share/xray /usr/local/share/xray
+COPY --from=python-build /usr/local/bin/xray /usr/local/bin/xray
 
 COPY . /code
 COPY --from=frontend-build /app/dashboard/build /code/app/dashboard/build
