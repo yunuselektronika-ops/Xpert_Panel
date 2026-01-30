@@ -43,7 +43,7 @@ COPY --from=python-build /usr/local/share/xray /usr/local/share/xray
 COPY --from=python-build /usr/local/bin/xray /usr/local/bin/xray
 
 COPY . /code
-COPY --from=frontend-build /app/dashboard/build /code/app/dashboard/build
+COPY --from=frontend-build /app/dashboard/dist /code/app/dashboard/build
 
 RUN ln -s /code/marzban-cli.py /usr/bin/marzban-cli \
     && chmod +x /usr/bin/marzban-cli \
