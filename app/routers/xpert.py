@@ -190,6 +190,93 @@ async def cleanup_ping_stats(days: int = 7):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/top-configs")
+async def get_top_configs(limit: int = 10):
+    """Получение топ-N конфигов с их score"""
+    try:
+        configs = xpert_service.get_active_configs()
+        
+        # Получаем топ конфиги с score
+        try:
+            from app.xpert.ping_stats import ping_stats_service
+            import config as app_config
+            
+            # Фильтруем здоровые
+            healthy_configs = ping_stats_service.get_healthy_configs(configs)
+            
+            # Получаем топ с score
+            top_limit = min(limit, app_config.XPERT_TOP_SERVERS_LIMIT)
+            top_configs = ping_stats_service.get_top_configs(healthy_configs, top_limit)
+            
+            # Добавляем score для отображения
+            result = []
+            for config in top_configs:
+                health = ping_stats_service.get_server_health(config.server, config.port, config.protocol)
+                score = 0
+                
+                if health['healthy'] is None:
+                    score = ping_stats_service._calculate_original_score(config)
+                elif health['healthy']:
+                    score = ping_stats_service._calculate_stats_score(health, config)
+                
+                result.append({
+                    "id": config.id,
+                    "protocol": config.protocol,
+                    "server": config.server,
+                    "port": config.port,
+                    "remarks": config.remarks,
+                    "ping_ms": config.ping_ms,
+                    "packet_loss": config.packet_loss,
+                    "is_active": config.is_active,
+                    "score": round(score, 2),
+                    "health": health
+                })
+            
+            return {"configs": result, "total": len(result)}
+            
+        except Exception as e:
+            # Если статистика недоступна, возвращаем базовые конфиги
+            return {"configs": configs[:limit], "total": len(configs[:limit])}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/queue-configs")
+async def get_queue_configs():
+    """Получение конфигов в очереди (не попавших в топ)"""
+    try:
+        configs = xpert_service.get_active_configs()
+        
+        # Получаем топ конфиги
+        try:
+            from app.xpert.ping_stats import ping_stats_service
+            import config as app_config
+            
+            # Фильтруем здоровые
+            healthy_configs = ping_stats_service.get_healthy_configs(configs)
+            
+            # Получаем топ
+            top_limit = app_config.XPERT_TOP_SERVERS_LIMIT
+            top_configs = ping_stats_service.get_top_configs(healthy_configs, top_limit)
+            
+            # Очередь = все здоровые минус топ
+            top_servers = {(c.server, c.port, c.protocol) for c in top_configs}
+            queue_configs = [
+                c for c in healthy_configs 
+                if (c.server, c.port, c.protocol) not in top_servers
+            ]
+            
+            return {"configs": queue_configs, "total": len(queue_configs)}
+            
+        except Exception as e:
+            # Если статистика недоступна, возвращаем пустую очередь
+            return {"configs": [], "total": 0}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/sub")
 async def get_subscription(format: str = "universal"):
     """Получение агрегированной подписки"""

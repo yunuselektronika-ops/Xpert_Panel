@@ -138,6 +138,69 @@ class PingStatsService:
             'unique_users': len(set(stat.user_id for stat in server_stats))
         }
     
+    def get_top_configs(self, configs: List[AggregatedConfig], limit: int = 10) -> List[AggregatedConfig]:
+        """Получение топ-N конфигов на основе статистики"""
+        import config as app_config
+        
+        # Если динамическая фильтрация отключена, возвращаем первые N
+        if not app_config.XPERT_USE_DYNAMIC_FILTERING:
+            return configs[:limit]
+        
+        # Оцениваем каждый конфиг
+        scored_configs = []
+        min_users = app_config.XPERT_MIN_USERS_FOR_STATS
+        
+        for config in configs:
+            health = self.get_server_health(config.server, config.port, config.protocol, min_users)
+            
+            if health['healthy'] is None:
+                # Нет статистики - используем оригинальные метрики
+                if config.is_active:
+                    score = self._calculate_original_score(config)
+                else:
+                    score = -1  # Неактивные не попадают в топ
+            else:
+                # Есть статистика - используем реальные метрики
+                if health['healthy']:
+                    score = self._calculate_stats_score(health, config)
+                else:
+                    score = -1  # Нездоровые не попадают в топ
+            
+            if score > 0:
+                scored_configs.append((config, score))
+        
+        # Сортируем по убыванию score и берем топ-N
+        scored_configs.sort(key=lambda x: x[1], reverse=True)
+        top_configs = [config for config, score in scored_configs[:limit]]
+        
+        return top_configs
+    
+    def _calculate_original_score(self, config: AggregatedConfig) -> float:
+        """Расчет score на основе оригинальных метрик"""
+        # Меньше пинг = выше score
+        ping_score = max(0, 1000 - config.ping_ms) / 1000 * 50
+        
+        # Меньше потеря пакетов = выше score  
+        loss_score = max(0, 100 - config.packet_loss) / 100 * 30
+        
+        # Активность = бонус
+        active_score = 20 if config.is_active else 0
+        
+        return ping_score + loss_score + active_score
+    
+    def _calculate_stats_score(self, health: Dict, config: AggregatedConfig) -> float:
+        """Расчет score на основе статистики пользователей"""
+        # Success rate (70%+ = хорошо)
+        success_score = health['success_rate'] / 100 * 40
+        
+        # Ping (меньше = лучше)
+        ping_score = max(0, 1000 - health['avg_ping']) / 1000 * 35
+        
+        # Количество пользователей (больше = надежнее)
+        users_score = min(25, health['unique_users'])  # До 25 баллов
+        
+        return success_score + ping_score + users_score
+    
     def get_healthy_configs(self, configs: List[AggregatedConfig]) -> List[AggregatedConfig]:
         """Фильтрация конфигов на основе реальной статистики пингов"""
         import config as app_config

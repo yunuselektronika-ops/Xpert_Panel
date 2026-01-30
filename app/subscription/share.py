@@ -84,10 +84,18 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
         # Если все ок, добавляем конфиги из Xpert Panel с учетом реальной статистики
         xpert_configs = xpert_service.get_active_configs()
         
-        # Фильтруем на основе реальной статистики пингов пользователей
+        # Фильтруем и берем только топ серверы
         try:
             from app.xpert.ping_stats import ping_stats_service
+            import config as app_config
+            
+            # Сначала фильтруем нездоровые
             xpert_configs = ping_stats_service.get_healthy_configs(xpert_configs)
+            
+            # Затем берем только топ-N
+            top_limit = app_config.XPERT_TOP_SERVERS_LIMIT
+            xpert_configs = ping_stats_service.get_top_configs(xpert_configs, top_limit)
+            
         except Exception as e:
             # Если статистика недоступна, используем оригинальные конфиги
             pass
