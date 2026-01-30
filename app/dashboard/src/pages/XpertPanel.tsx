@@ -34,17 +34,17 @@ import {
   useDisclosure,
   useToast,
   VStack,
+  chakra,
 } from "@chakra-ui/react";
 import { Header } from "components/Header";
 import { Footer } from "components/Footer";
 import { FC, useEffect, useState } from "react";
-import { chakra } from "@chakra-ui/react";
 import { TrashIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
+import { fetch } from "../service/http";
+import { getAuthToken } from "../utils/authStorage";
 
 const DeleteIcon = chakra(TrashIcon, { baseStyle: { w: 4, h: 4 } });
 const RepeatIcon = chakra(ArrowPathIcon, { baseStyle: { w: 4, h: 4 } });
-import { fetch } from "../service/http";
-import { getAuthToken } from "../utils/authStorage";
 
 interface Source {
   id: number;
