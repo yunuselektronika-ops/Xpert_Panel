@@ -52,6 +52,9 @@ def reset_user_by_next_report(db: Session, user: "User"):
 
 
 def review():
+    if not xray.XRAY_ENABLED:
+        return
+    
     now = datetime.utcnow()
     now_ts = now.timestamp()
     with GetDB() as db:
