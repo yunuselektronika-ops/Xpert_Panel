@@ -304,7 +304,7 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
     try:
         from app.xpert.service import xpert_service
         from app.xpert.cluster_service import whitelist_service
-        from app.xpert.ip_filter import ip_filter
+        from app.xpert.ip_filter import host_filter
         from app.xpert.marzban_integration import marzban_integration
         
         # Автоматическая синхронизация с Marzban при генерации подписки
@@ -324,12 +324,12 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
         except Exception as sync_error:
             logger.warning(f"Auto-sync failed: {sync_error}")
         
-        # Получаем разрешенные IP
-        allowed_ips = whitelist_service.get_all_allowed_ips()
+        # Получаем разрешенные хосты
+        allowed_hosts = whitelist_service.get_all_allowed_hosts()
         
-        # Если есть разрешенные IP, фильтруем сервера
-        if allowed_ips:
-            logger.info(f"Found {len(allowed_ips)} allowed IPs, filtering servers")
+        # Если есть разрешенные хосты, фильтруем сервера
+        if allowed_hosts:
+            logger.info(f"Found {len(allowed_hosts)} allowed hosts, filtering servers")
             
             # Получаем все конфиги из Xpert
             if not app_config.XPERT_REQUIRE_ACTIVE_STATUS:
@@ -349,14 +349,14 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
                 
                 xpert_configs = xpert_service.get_active_configs()
             
-            # Фильтруем сервера по разрешенным IP
+            # Фильтруем сервера по разрешенным хостам
             server_configs = [config.raw for config in xpert_configs]
             
             if server_configs:
-                logger.info(f"Filtering {len(server_configs)} servers by allowed IPs")
+                logger.info(f"Filtering {len(server_configs)} servers by allowed hosts")
                 
                 # Фильтрация серверов
-                filtered_configs = ip_filter.filter_servers(server_configs)
+                filtered_configs = host_filter.filter_servers(server_configs)
                 
                 logger.info(f"Filtered result: {len(filtered_configs)}/{len(server_configs)} servers allowed")
                 
@@ -367,8 +367,8 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
             else:
                 logger.info("No Xpert configs to filter")
         else:
-            # Если разрешенных IP нет, используем обычные Xpert конфиги
-            logger.info("No allowed IPs found, using regular Xpert configs")
+            # Если разрешенных хостов нет, используем обычные Xpert конфиги
+            logger.info("No allowed hosts found, using regular Xpert configs")
             
             # Если проверка статуса отключена в настройках, всегда добавляем Xpert конфиги
             if not app_config.XPERT_REQUIRE_ACTIVE_STATUS:

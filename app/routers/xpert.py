@@ -87,33 +87,33 @@ async def create_whitelist(data: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/whitelists/{whitelist_id}/ips")
-async def add_allowed_ip(whitelist_id: str, data: dict):
-    """Добавить разрешенный IP в белый список"""
+@router.post("/whitelists/{whitelist_id}/hosts")
+async def add_allowed_host(whitelist_id: str, data: dict):
+    """Добавить разрешенный хост (IP или домен) в белый список"""
     try:
         from app.xpert.cluster_service import whitelist_service
         
-        ip = data.get('ip', '').strip()
+        host = data.get('host', '').strip()
         description = data.get('description', '').strip()
         country = data.get('country', '').strip()
         
-        if not ip:
-            raise HTTPException(status_code=400, detail="IP address is required")
+        if not host:
+            raise HTTPException(status_code=400, detail="Host (IP or domain) is required")
         
-        success = whitelist_service.add_allowed_ip(
-            whitelist_id, ip, description, country
+        success = whitelist_service.add_allowed_host(
+            whitelist_id, host, description, country
         )
         
         if success:
-            return {"message": "Allowed IP added successfully"}
+            return {"message": "Allowed host added successfully"}
         else:
             raise HTTPException(status_code=404, detail="Whitelist not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/whitelists/{whitelist_id}/ips")
-async def get_whitelist_ips(whitelist_id: str):
-    """Получить IP адреса белого списка"""
+@router.get("/whitelists/{whitelist_id}/hosts")
+async def get_whitelist_hosts(whitelist_id: str):
+    """Получить хосты (IP и домены) белого списка"""
     try:
         from app.xpert.cluster_service import whitelist_service
         
@@ -126,71 +126,56 @@ async def get_whitelist_ips(whitelist_id: str):
         return {
             "whitelist_id": whitelist_id,
             "whitelist_name": whitelist.name,
-            "ips": [
+            "hosts": [
                 {
-                    "ip": ip.ip,
-                    "description": ip.description,
-                    "country": ip.country,
-                    "is_active": ip.is_active,
-                    "added_at": ip.added_at
+                    "host": host.host,
+                    "description": host.description,
+                    "country": host.country,
+                    "is_active": host.is_active,
+                    "added_at": host.added_at
                 }
-                for ip in whitelist.allowed_ips
+                for host in whitelist.allowed_hosts
             ]
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.put("/whitelists/{whitelist_id}/ips/{ip}/status")
-async def update_ip_status(whitelist_id: str, ip: str, data: dict):
-    """Обновить статус IP"""
+@router.put("/whitelists/{whitelist_id}/hosts/{host}/status")
+async def update_host_status(whitelist_id: str, host: str, data: dict):
+    """Обновить статус хоста"""
     try:
         from app.xpert.cluster_service import whitelist_service
         
         is_active = data.get('is_active', True)
         
-        success = whitelist_service.update_ip_status(ip, is_active)
+        success = whitelist_service.update_host_status(host, is_active)
         
         if success:
-            return {"message": "IP status updated successfully"}
+            return {"message": "Host status updated successfully"}
         else:
-            raise HTTPException(status_code=404, detail="IP not found")
+            raise HTTPException(status_code=404, detail="Host not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/whitelists/{whitelist_id}")
-async def delete_whitelist(whitelist_id: str):
-    """Удалить белый список"""
+@router.get("/allowed-hosts")
+async def get_allowed_hosts():
+    """Получить все разрешенные хосты (IP и домены)"""
     try:
         from app.xpert.cluster_service import whitelist_service
-        
-        success = whitelist_service.delete_whitelist(whitelist_id)
-        
-        if success:
-            return {"message": "Whitelist deleted successfully"}
-        else:
-            raise HTTPException(status_code=404, detail="Whitelist not found")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/allowed-ips")
-async def get_allowed_ips():
-    """Получить все разрешенные IP адреса"""
-    try:
-        from app.xpert.cluster_service import whitelist_service
-        allowed_ips = whitelist_service.get_all_allowed_ips()
+        allowed_hosts = whitelist_service.get_all_allowed_hosts()
         
         return {
-            "ips": list(allowed_ips),
-            "total": len(allowed_ips)
+            "hosts": list(allowed_hosts),
+            "total": len(allowed_hosts)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/filter-servers")
-async def filter_servers_by_ip(data: dict):
-    """Отфильтровать сервера по белому списку IP"""
+async def filter_servers_by_host(data: dict):
+    """Отфильтровать сервера по белому списку хостов"""
     try:
-        from app.xpert.ip_filter import ip_filter
+        from app.xpert.ip_filter import host_filter
         
         server_configs = data.get('servers', [])
         
@@ -198,13 +183,13 @@ async def filter_servers_by_ip(data: dict):
             raise HTTPException(status_code=400, detail="No servers provided")
         
         # Фильтрация серверов
-        filtered_servers = ip_filter.filter_servers(server_configs)
+        filtered_servers = host_filter.filter_servers(server_configs)
         
         return {
             "total_servers": len(server_configs),
             "allowed_servers": len(filtered_servers),
             "servers": filtered_servers,
-            "stats": ip_filter.get_filter_stats()
+            "stats": host_filter.get_filter_stats()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
