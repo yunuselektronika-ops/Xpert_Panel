@@ -65,7 +65,7 @@ export const Login: FC = () => {
       navigate("/login", { replace: true });
     }
   }, []);
-  const login = (values: FieldValues) => {
+  const login = (values: any) => {
     setError("");
     const formData = new FormData();
     formData.append("username", values.username);
@@ -75,12 +75,18 @@ export const Login: FC = () => {
     fetch("/api/admin/token", { method: "post", body: formData })
       .then(({ access_token: token }) => {
         setAuthToken(token);
-        navigate("/");
+        // Добавляем небольшую задержку перед навигацией
+        setTimeout(() => {
+          navigate("/");
+        }, 100);
       })
       .catch((err) => {
-        setError(err.response._data.detail);
+        console.error("Login failed:", err);
+        setError(err.response?._data?.detail || "Login failed");
       })
-      .finally(setLoading.bind(null, false));
+      .finally(() => {
+        setLoading(false);
+      });
   };
   return (
     <VStack justifyContent="space-between" minH="100vh" p="6" w="full">

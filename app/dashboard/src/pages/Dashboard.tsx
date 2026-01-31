@@ -19,8 +19,12 @@ import { Statistics } from "../components/Statistics";
 
 export const Dashboard: FC = () => {
   useEffect(() => {
-    useDashboard.getState().refetchUsers();
-    fetchInbounds();
+    try {
+      useDashboard.getState().refetchUsers();
+      fetchInbounds();
+    } catch (error) {
+      console.error("Dashboard initialization failed:", error);
+    }
   }, []);
   return (
     <VStack justifyContent="space-between" minH="100vh" p="6" rowGap={4}>
