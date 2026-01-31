@@ -102,63 +102,82 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
     format_variables = setup_format_variables(extra_data)
     conf = V2rayShareLink()
     
-    # Добавляем обычные конфиги Marzban
-    marzban_links = process_inbounds_and_tags(inbounds, proxies, format_variables, conf=conf, reverse=reverse)
+    # Проверяем статус пользователя для фильтрации сторонних серверов
+    user_status = extra_data.get('status', '')
+    data_limit = extra_data.get('data_limit', 0)
+    used_traffic = extra_data.get('used_traffic', 0)
+    expire = extra_data.get('expire', 0)
     
-    # Добавляем конфиги из Xpert Panel только для активных пользователей
+    # Определяем, нужно ли скрывать сторонние сервера
+    hide_external_servers = False
+    import config as app_config
+    
+    # Если пользователь неактивен - скрываем сторонние сервера
+    if user_status not in ['active', 'on_hold']:
+        hide_external_servers = True
+    
+    # Если закончился трафик - скрываем сторонние сервера  
+    if data_limit > 0 and used_traffic >= data_limit:
+        hide_external_servers = True
+        
+    # Если истек срок - скрываем сторонние сервера
+    if expire > 0 and expire <= 0:
+        hide_external_servers = True
+    
+    # Добавляем обычные конфиги Marzban (только если не скрыты)
+    if not hide_external_servers:
+        marzban_links = process_inbounds_and_tags(inbounds, proxies, format_variables, conf=conf, reverse=reverse)
+    else:
+        # Если пользователь неактивен, добавляем только заглушку или пусто
+        pass
+    
+    # Добавляем конфиги из Xpert Panel (с отдельной проверкой статуса)
     try:
         from app.xpert.service import xpert_service
-        import config as app_config
         
-        # Если проверка статуса отключена в настройках, всегда добавляем
+        # Если проверка статуса отключена в настройках, всегда добавляем Xpert конфиги
         if not app_config.XPERT_REQUIRE_ACTIVE_STATUS:
             xpert_configs = xpert_service.get_active_configs()
             for config in xpert_configs:
-                conf.add_link(config.raw)
-            return conf.render(reverse=reverse)
-        
-        # Проверяем статус пользователя
-        user_status = extra_data.get('status', '')
-        data_limit = extra_data.get('data_limit', 0)
-        used_traffic = extra_data.get('used_traffic', 0)
-        expire = extra_data.get('expire', 0)
-        
-        # Если пользователь неактивен, не добавляем Xpert конфиги
-        if user_status not in ['active', 'on_hold']:
-            return conf.render(reverse=reverse)
+                # Заменяем имя сервера на флаг страны
+                config_with_flags = replace_server_names_with_flags(config.raw)
+                conf.add_link(config_with_flags)
+        else:
+            # Если пользователь неактивен, не добавляем Xpert конфиги
+            if user_status not in ['active', 'on_hold']:
+                return conf.render(reverse=reverse)
+                
+            # Если закончился трафик, не добавляем Xpert конфиги
+            if data_limit > 0 and used_traffic >= data_limit:
+                return conf.render(reverse=reverse)
+                
+            # Если истек срок, не добавляем Xpert конфиги
+            if expire > 0 and expire <= 0:
+                return conf.render(reverse=reverse)
             
-        # Если закончился трафик, не добавляем Xpert конфиги
-        if data_limit > 0 and used_traffic >= data_limit:
-            return conf.render(reverse=reverse)
+            # Если все ок, добавляем конфиги из Xpert Panel с учетом реальной статистики
+            xpert_configs = xpert_service.get_active_configs()
             
-        # Если истек срок, не добавляем Xpert конфиги
-        if expire > 0 and expire <= 0:
-            return conf.render(reverse=reverse)
-        
-        # Если все ок, добавляем конфиги из Xpert Panel с учетом реальной статистики
-        xpert_configs = xpert_service.get_active_configs()
-        
-        # Фильтруем и берем только топ серверы
-        try:
-            from app.xpert.ping_stats import ping_stats_service
-            import config as app_config
+            # Фильтруем и берем только топ серверы
+            try:
+                from app.xpert.ping_stats import ping_stats_service
+                
+                # Сначала фильтруем нездоровые
+                xpert_configs = ping_stats_service.get_healthy_configs(xpert_configs)
+                
+                # Затем берем только топ-N
+                top_limit = app_config.XPERT_TOP_SERVERS_LIMIT
+                xpert_configs = ping_stats_service.get_top_configs(xpert_configs, top_limit)
+                
+            except Exception as e:
+                # Если статистика недоступна, используем оригинальные конфиги
+                pass
             
-            # Сначала фильтруем нездоровые
-            xpert_configs = ping_stats_service.get_healthy_configs(xpert_configs)
-            
-            # Затем берем только топ-N
-            top_limit = app_config.XPERT_TOP_SERVERS_LIMIT
-            xpert_configs = ping_stats_service.get_top_configs(xpert_configs, top_limit)
-            
-        except Exception as e:
-            # Если статистика недоступна, используем оригинальные конфиги
-            pass
-        
-        for config in xpert_configs:
-            # Заменяем имя сервера на флаг страны
-            config_with_flags = replace_server_names_with_flags(config.raw)
-            conf.add_link(config_with_flags)
-            
+            for config in xpert_configs:
+                # Заменяем имя сервера на флаг страны
+                config_with_flags = replace_server_names_with_flags(config.raw)
+                conf.add_link(config_with_flags)
+                
     except Exception as e:
         # Если Xpert Panel не настроен, просто игнорируем
         pass
