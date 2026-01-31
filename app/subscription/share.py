@@ -304,6 +304,26 @@ def generate_subscription(
     else:
         raise ValueError(f'Unsupported format "{config_format}"')
 
+    # Добавляем Happ routing для фильтрации по геолокации
+    if config_format == "v2ray":
+        try:
+            from app.xpert.service import xpert_service
+            from app.xpert.routing_service import routing_service
+            
+            # Получаем все конфиги для routing
+            all_configs = xpert_service.get_all_configs()
+            
+            # Определяем профиль routing на основе IP пользователя
+            user_ip = getattr(user, 'last_ip', None)
+            profile_key = routing_service._detect_user_region(user_ip)
+            
+            # Добавляем routing в подписку
+            config = routing_service.add_routing_to_subscription(config, profile_key, all_configs)
+            
+            logger.info(f"Added Happ routing profile '{profile_key}' to subscription")
+        except Exception as e:
+            logger.error(f"Failed to add routing to subscription: {e}")
+
     if as_base64:
         config = base64.b64encode(config.encode()).decode()
 
