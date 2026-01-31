@@ -230,6 +230,7 @@ def get_users(
     """Get all users"""
     try:
         print(f"get_users API called with: sort={sort}, admin={admin}")
+        print(f"Admin details: username={admin.username}, is_sudo={admin.is_sudo}, id={getattr(admin, 'id', 'NO_ID')}")
         
         if sort is not None:
             opts = sort.strip(",").split(",")
@@ -242,6 +243,9 @@ def get_users(
                         status_code=400, detail=f'"{opt}" is not a valid sort option'
                     )
 
+        admins_filter = owner if admin.is_sudo else [admin.username]
+        print(f"Using admins filter: {admins_filter}")
+
         users, count = crud.get_users(
             db=db,
             offset=offset,
@@ -250,7 +254,7 @@ def get_users(
             usernames=username,
             status=status,
             sort=sort,
-            admins=owner if admin.is_sudo else [admin.username],
+            admins=admins_filter,
             return_with_count=True,
         )
 

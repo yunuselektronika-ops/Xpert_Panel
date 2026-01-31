@@ -292,6 +292,11 @@ def get_users(db: Session,
             admin_ids = [aid[0] for aid in admin_ids]
             if admin_ids:
                 query = query.filter(User.admin_id.in_(admin_ids))
+            else:
+                # If no admin IDs found, return empty result
+                if return_with_count:
+                    return [], 0
+                return []
 
         if return_with_count:
             count = query.count()
