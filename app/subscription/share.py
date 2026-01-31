@@ -124,7 +124,7 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
         hide_external_servers = True
         
     # Если истек срок - скрываем сторонние сервера
-    if expire > 0 and expire <= 0:
+    if expire is not None and expire > 0 and expire <= 0:
         hide_external_servers = True
     
     # Добавляем обычные конфиги Marzban (только если не скрыты)
@@ -173,7 +173,7 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
                 return conf.render(reverse=reverse)
                 
             # Если истек срок, не добавляем Xpert конфиги
-            if expire > 0 and expire <= 0:
+            if expire is not None and expire > 0 and expire <= 0:
                 return conf.render(reverse=reverse)
             
             # Если все ок, добавляем конфиги из Xpert Panel с учетом реальной статистики
