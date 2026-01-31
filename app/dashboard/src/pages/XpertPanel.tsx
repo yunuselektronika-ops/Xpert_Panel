@@ -97,6 +97,7 @@ export const XpertPanel: FC = () => {
     url: "",
     priority: 1,
   });
+  const [testingUrl, setTestingUrl] = useState(false);
   const toast = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();
 
@@ -168,6 +169,55 @@ export const XpertPanel: FC = () => {
         status: "error",
         duration: 3000,
       });
+    }
+  };
+
+  const handleTestUrl = async () => {
+    if (!newSource.url) {
+      toast({
+        title: "Please enter URL to test",
+        status: "warning",
+        duration: 3000,
+      });
+      return;
+    }
+
+    setTestingUrl(true);
+    try {
+      const result = await fetch("/api/xpert/test-url", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${getAuthToken()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url: newSource.url }),
+      });
+      const data = await result.json();
+      
+      if (data.success) {
+        toast({
+          title: "URL Test Successful",
+          description: `Found ${data.config_count} configs`,
+          status: "success",
+          duration: 5000,
+        });
+      } else {
+        toast({
+          title: "URL Test Failed",
+          description: data.error || "Unknown error",
+          status: "error",
+          duration: 5000,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error testing URL",
+        description: "Failed to connect to the URL",
+        status: "error",
+        duration: 3000,
+      });
+    } finally {
+      setTestingUrl(false);
     }
   };
 
@@ -467,6 +517,17 @@ export const XpertPanel: FC = () => {
                   }
                   placeholder="https://example.com/subscription"
                 />
+                <Button
+                  mt={2}
+                  size="sm"
+                  colorScheme="blue"
+                  variant="outline"
+                  onClick={handleTestUrl}
+                  isLoading={testingUrl}
+                  w="full"
+                >
+                  {testingUrl ? "Testing..." : "Test URL"}
+                </Button>
               </FormControl>
               <FormControl>
                 <FormLabel>Priority</FormLabel>

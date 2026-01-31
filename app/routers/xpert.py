@@ -134,6 +134,30 @@ async def get_configs():
     ]
 
 
+@router.post("/test-url")
+async def test_subscription_url(url_data: dict):
+    """Тестирование URL подписки перед добавлением"""
+    url = url_data.get("url", "")
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    
+    try:
+        configs = await checker.fetch_subscription(url)
+        return {
+            "success": True,
+            "url": url,
+            "config_count": len(configs),
+            "sample_configs": configs[:3]  # Показываем первые 3 конфига для примера
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "url": url,
+            "error": str(e),
+            "config_count": 0
+        }
+
+
 @router.post("/sync-marzban")
 async def sync_to_marzban():
     """Принудительная синхронизация с Marzban"""

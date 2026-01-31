@@ -153,25 +153,63 @@ class ConfigChecker:
         """Получение конфигураций из URL подписки"""
         configs = []
         try:
-            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-                response = await client.get(url, headers={
-                    "User-Agent": "Happ/1.0"
-                })
+            # Улучшенные заголовки для GitHub и других сервисов
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                "Accept": "text/plain, application/octet-stream, */*",
+                "Accept-Encoding": "gzip, deflate",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache"
+            }
+            
+            # Настройки клиента с поддержкой SSL
+            async with httpx.AsyncClient(
+                timeout=30, 
+                follow_redirects=True,
+                verify=False  # Отключаем проверку SSL для проблемных сертификатов
+            ) as client:
+                response = await client.get(url, headers=headers)
+                
                 if response.status_code == 200:
                     content = response.text
                     
-                    # Попробуем декодировать base64
-                    try:
-                        decoded = base64.b64decode(content).decode('utf-8')
-                        content = decoded
-                    except:
-                        pass
+                    # Попробуем декодировать base64 (несколько попыток)
+                    decoded_content = content
+                    for attempt in range(3):
+                        try:
+                            # Убираем возможные пробелы и переносы
+                            clean_content = content.strip().replace('\n', '').replace('\r', '')
+                            # Добавляем padding если нужно
+                            padding_needed = len(clean_content) % 4
+                            if padding_needed:
+                                clean_content += '=' * (4 - padding_needed)
+                            
+                            decoded = base64.b64decode(clean_content).decode('utf-8')
+                            decoded_content = decoded
+                            break
+                        except Exception as e:
+                            if attempt == 2:  # Последняя попытка
+                                logger.debug(f"Base64 decode failed after 3 attempts: {e}")
+                            continue
                     
-                    # Разбиваем на строки
-                    for line in content.split('\n'):
+                    # Используем декодированный контент или оригинал
+                    final_content = decoded_content if decoded_content != content else content
+                    
+                    # Разбиваем на строки и фильтруем
+                    for line in final_content.split('\n'):
                         line = line.strip()
                         if line and any(line.startswith(p) for p in ['vless://', 'vmess://', 'trojan://', 'ss://', 'ssr://']):
                             configs.append(line)
+                    
+                    logger.info(f"Fetched {len(configs)} configs from {url}")
+                    
+                else:
+                    logger.error(f"HTTP {response.status_code} for {url}")
+                    
+        except httpx.SSLError as e:
+            logger.error(f"SSL error for {url}: {e}")
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout for {url}: {e}")
         except Exception as e:
             logger.error(f"Failed to fetch subscription {url}: {e}")
         
