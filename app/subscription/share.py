@@ -54,6 +54,7 @@ def replace_server_names_with_flags(config_raw: str) -> str:
         
         # Если флаги отключены в настройках, возвращаем как есть
         if not app_config.XPERT_USE_COUNTRY_FLAGS:
+            logger.info("Country flags disabled in config, returning original")
             return config_raw
             
         from app.xpert.geo_service import geo_service
@@ -62,6 +63,8 @@ def replace_server_names_with_flags(config_raw: str) -> str:
         import urllib.parse
         logger = logging.getLogger(__name__)
         
+        logger.info(f"Processing config for flags replacement, length: {len(config_raw)}")
+        
         # Регулярное выражение для поиска имен серверов в различных форматах
         name_pattern = r'(name="?([^"=,]+)"?)'
         
@@ -69,8 +72,11 @@ def replace_server_names_with_flags(config_raw: str) -> str:
             full_match = match.group(1)
             server_name = match.group(2)
             
+            logger.debug(f"Processing server name: {server_name}")
+            
             # Если имя уже содержит флаг (emoji), не меняем его
             if any(ord(char) > 127 for char in server_name):
+                logger.debug(f"Server {server_name} already has flag, skipping")
                 return full_match
             
             # Пробуем определить страну по имени сервера
@@ -84,10 +90,12 @@ def replace_server_names_with_flags(config_raw: str) -> str:
                     flag_encoded = urllib.parse.quote(flag.encode('utf-8'))
                     new_name = f"{flag_encoded} {code}"
                     
-                    logger.debug(f"Replaced '{server_name}' with '{new_name}' (flag: {flag})")
+                    logger.info(f"Replaced '{server_name}' with '{new_name}' (flag: {flag})")
                     return full_match.replace(server_name, new_name)
                 except Exception as e:
                     logger.debug(f"Failed to get country for {server_name}: {e}")
+            else:
+                logger.debug(f"Server name {server_name} doesn't look like domain, skipping")
             
             # Если не удалось определить, оставляем как есть
             return full_match
@@ -112,6 +120,8 @@ def replace_server_names_with_flags(config_raw: str) -> str:
         
     except Exception as e:
         logger.error(f"Error in replace_server_names_with_flags: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         # Если что-то пошло не так, возвращаем оригинал
         return config_raw
 
