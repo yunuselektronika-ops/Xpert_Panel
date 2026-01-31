@@ -3,6 +3,7 @@ import base64
 import re
 import socket
 import subprocess
+import time
 import logging
 from typing import List, Tuple, Optional
 from urllib.parse import urlparse, parse_qs, unquote
@@ -112,15 +113,59 @@ class ConfigChecker:
             pass
         return "", 0, ""
     
-    async def check_ping(self, host: str) -> Tuple[float, float, float]:
-        """Проверка пинга до хоста"""
+    async def check_connectivity(self, host: str, port: int) -> Tuple[bool, float]:
+        """Комплексная проверка доступности сервера"""
         try:
+            # Метод 1: TCP соединение (самый надежный)
+            start_time = time.time()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)  # 5 секунд таймаут
+            result = sock.connect_ex((host, port))
+            end_time = time.time()
+            sock.close()
+            
+            if result == 0:
+                tcp_time = (end_time - start_time) * 1000  # в миллисекундах
+                logger.debug(f"TCP connection successful to {host}:{port} in {tcp_time:.2f}ms")
+                return True, tcp_time
+            else:
+                logger.debug(f"TCP connection failed to {host}:{port}")
+                
+        except Exception as e:
+            logger.debug(f"TCP check failed for {host}:{port}: {e}")
+        
+        # Метод 2: HTTP/HTTPS проверка (если порт 80/443)
+        if port in [80, 443, 8080, 8443]:
+            try:
+                import httpx
+                protocol = "https" if port in [443, 8443] else "http"
+                url = f"{protocol}://{host}:{port}"
+                
+                start_time = time.time()
+                async with httpx.AsyncClient(timeout=5, verify=False) as client:
+                    response = await client.head(url)
+                    end_time = time.time()
+                    
+                if response.status_code < 500:
+                    http_time = (end_time - start_time) * 1000
+                    logger.debug(f"HTTP check successful to {url} in {http_time:.2f}ms")
+                    return True, http_time
+                    
+            except Exception as e:
+                logger.debug(f"HTTP check failed for {host}:{port}: {e}")
+        
+        return False, 999.0
+    
+    async def check_ping(self, host: str) -> Tuple[float, float, float]:
+        """Улучшенная проверка пинга с fallback на connectivity"""
+        try:
+            # Сначала пробуем ICMP ping
             process = await asyncio.create_subprocess_exec(
-                "ping", "-c", "3", "-W", str(self.timeout), host,
+                "ping", "-c", "2", "-W", "2", host,  # Уменьшили количество и таймаут
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=10)
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=5)
             output = stdout.decode()
             
             times = re.findall(r'time[=<](\d+\.?\d*)', output)
@@ -132,10 +177,14 @@ class ConfigChecker:
                 loss_match = re.search(r'(\d+)% packet loss', output)
                 loss = float(loss_match.group(1)) if loss_match else 0
                 
+                logger.debug(f"ICMP ping to {host}: {avg_ping:.2f}ms, loss: {loss}%")
                 return avg_ping, jitter, loss
+                
         except Exception as e:
-            logger.debug(f"Ping failed for {host}: {e}")
+            logger.debug(f"ICMP ping failed for {host}: {e}")
         
+        # Fallback: если ICMP не работает, возвращаем высокие значения
+        # Но проверка connectivity будет в основном методе
         return 999.0, 0.0, 100.0
     
     def check_port(self, host: str, port: int) -> bool:
@@ -223,25 +272,40 @@ class ConfigChecker:
         return configs
     
     async def process_config(self, raw: str) -> Optional[dict]:
-        """Обработка одной конфигурации"""
+        """Обработка одной конфигурации с улучшенной проверкой доступности"""
+        import time
+        
         protocol, server, port, remarks = self.parse_config(raw)
         
         if not server or not port:
             logger.warning(f"Failed to parse server/port from: {raw}")
             return None
         
-        # Временно отключаем ping-проверку для отладки
-        ping, jitter, loss = 0, 0, 0  # await self.check_ping(server)
-        port_open = True  # self.check_port(server, port)
+        logger.info(f"Testing {protocol}://{server}:{port} - {remarks[:30]}...")
         
-        # Временно считаем все конфиги активными для отладки
-        is_active = True  # (
-        #     ping <= self.max_ping and
-        #     loss < 50 and
-        #     port_open
-        # )
+        # Комплексная проверка доступности
+        is_connected, connection_time = await self.check_connectivity(server, port)
         
-        logger.info(f"Parsed config: {protocol}://{server}:{port} - {remarks[:30]}...")
+        # Дополнительная ping-проверка (если доступен)
+        if is_connected:
+            ping, jitter, loss = await self.check_ping(server)
+            # Если ping не удался, используем время подключения как пинг
+            if ping >= 999.0:
+                ping = connection_time
+                loss = 0
+        else:
+            ping, jitter, loss = 999.0, 0.0, 100.0
+        
+        # Критерии активности (более гибкие)
+        is_active = (
+            is_connected and  # Главное - доступность
+            ping <= 1000 and  # Пинг до 1 секунды
+            loss < 100        # Потери до 100%
+        )
+        
+        logger.info(f"Result: {protocol}://{server}:{port} - "
+                   f"{'ACTIVE' if is_active else 'INACTIVE'} "
+                   f"(ping: {ping:.1f}ms, loss: {loss:.1f}%, connected: {is_connected})")
         
         return {
             "raw": raw,
