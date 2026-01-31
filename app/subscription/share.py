@@ -140,6 +140,55 @@ def detect_user_region(user_ip: str = None) -> str:
     return 'global'
 
 
+def create_config_from_cluster_server(server, extra_data: dict) -> str:
+    """Создает конфигурацию из данных кластерного сервера"""
+    try:
+        import secrets
+        from app import xray
+        
+        # Получаем UUID пользователя
+        user_uuid = extra_data.get('uuid', secrets.token_hex(8))
+        
+        # Определяем протокол по порту или настройкам
+        if server.port == 443:
+            protocol = "vless"  # По умолчанию для 443
+        else:
+            protocol = "vmess"  # Для других портов
+        
+        # Создаем базовую конфигурацию
+        if protocol == "vless":
+            config = f"vless://{user_uuid}@{server.ip}:{server.port}?security=tls&type=ws&host={server.host or server.domain}&path=/"
+            if server.sni:
+                config += f"&sni={server.sni}"
+            config += f"#{server.country or 'UNKNOWN'}-{server.ip}"
+        else:  # vmess
+            vmess_config = {
+                "v": "2",
+                "ps": f"{server.country or 'UNKNOWN'}-{server.ip}",
+                "add": server.ip,
+                "port": server.port,
+                "id": user_uuid,
+                "aid": "0",
+                "scy": "auto",
+                "net": "ws",
+                "type": "none",
+                "host": server.host or server.domain,
+                "path": "/",
+                "tls": "tls",
+                "sni": server.sni or server.domain
+            }
+            import base64
+            import json
+            config = "vmess://" + base64.b64encode(json.dumps(vmess_config).encode()).decode()
+        
+        logger.debug(f"Created {protocol} config for {server.ip}")
+        return config
+        
+    except Exception as e:
+        logger.error(f"Error creating config from cluster server: {e}")
+        return ""
+
+
 def replace_server_names_with_flags(config_raw: str) -> str:
     try:
         import config as app_config
@@ -254,6 +303,7 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
     # Добавляем конфиги из Xpert Panel (с автоматической синхронизацией)
     try:
         from app.xpert.service import xpert_service
+        from app.xpert.cluster_service import cluster_service
         from app.xpert.marzban_integration import marzban_integration
         
         # Автоматическая синхронизация с Marzban при генерации подписки
@@ -273,57 +323,75 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
         except Exception as sync_error:
             logger.warning(f"Auto-sync failed: {sync_error}")
         
-        # Если проверка статуса отключена в настройках, всегда добавляем Xpert конфиги
-        if not app_config.XPERT_REQUIRE_ACTIVE_STATUS:
-            xpert_configs = xpert_service.get_active_configs()
+        # Получаем активные сервера из кластеров (ручная проверка)
+        cluster_servers = cluster_service.get_active_servers()
+        
+        # Если есть кластеры, используем только их
+        if cluster_servers:
+            logger.info(f"Using {len(cluster_servers)} servers from clusters")
             
-            # Фильтруем сервера по региону пользователя
-            user_ip = extra_data.get('last_ip', None)
-            xpert_configs = filter_servers_by_region(xpert_configs, user_ip)
-            
-            for config in xpert_configs:
-                # Заменяем имя сервера на флаг страны
-                config_with_flags = replace_server_names_with_flags(config.raw)
-                conf.add_link(config_with_flags)
+            # Конвертируем кластерные сервера в конфиги
+            for server in cluster_servers:
+                # Создаем конфиг на основе данных кластера
+                config_raw = create_config_from_cluster_server(server, extra_data)
+                if config_raw:
+                    config_with_flags = replace_server_names_with_flags(config_raw)
+                    conf.add_link(config_with_flags)
         else:
-            # Если пользователь неактивен, не добавляем Xpert конфиги
-            if user_status not in ['active', 'on_hold']:
-                return conf.render(reverse=reverse)
-                
-            # Если закончился трафик, не добавляем Xpert конфиги
-            if data_limit is not None and data_limit > 0 and used_traffic >= data_limit:
-                return conf.render(reverse=reverse)
-                
-            # Если истек срок, не добавляем Xpert конфиги
-            if expire is not None and expire > 0 and expire <= 0:
-                return conf.render(reverse=reverse)
+            # Если кластеров нет, используем обычные Xpert конфиги
+            logger.info("No cluster servers found, using regular Xpert configs")
             
-            # Если все ок, добавляем конфиги из Xpert Panel с учетом реальной статистики
-            xpert_configs = xpert_service.get_active_configs()
-            
-            # Фильтруем сервера по региону пользователя
-            user_ip = extra_data.get('last_ip', None)
-            xpert_configs = filter_servers_by_region(xpert_configs, user_ip)
-            
-            # Фильтруем и берем только топ серверы
-            try:
-                from app.xpert.ping_stats import ping_stats_service
+            # Если проверка статуса отключена в настройках, всегда добавляем Xpert конфиги
+            if not app_config.XPERT_REQUIRE_ACTIVE_STATUS:
+                xpert_configs = xpert_service.get_active_configs()
                 
-                # Сначала фильтруем нездоровые
-                xpert_configs = ping_stats_service.get_healthy_configs(xpert_configs)
+                # Фильтруем сервера по региону пользователя
+                user_ip = extra_data.get('last_ip', None)
+                xpert_configs = filter_servers_by_region(xpert_configs, user_ip)
                 
-                # Затем берем только топ-N
-                top_limit = app_config.XPERT_TOP_SERVERS_LIMIT
-                xpert_configs = ping_stats_service.get_top_configs(xpert_configs, top_limit)
+                for config in xpert_configs:
+                    # Заменяем имя сервера на флаг страны
+                    config_with_flags = replace_server_names_with_flags(config.raw)
+                    conf.add_link(config_with_flags)
+            else:
+                # Если пользователь неактивен, не добавляем Xpert конфиги
+                if user_status not in ['active', 'on_hold']:
+                    return conf.render(reverse=reverse)
+                    
+                # Если закончился трафик, не добавляем Xpert конфиги
+                if data_limit is not None and data_limit > 0 and used_traffic >= data_limit:
+                    return conf.render(reverse=reverse)
+                    
+                # Если истек срок, не добавляем Xpert конфиги
+                if expire is not None and expire > 0 and expire <= 0:
+                    return conf.render(reverse=reverse)
                 
-            except Exception as e:
-                # Если статистика недоступна, используем оригинальные конфиги
-                pass
-            
-            for config in xpert_configs:
-                # Заменяем имя сервера на флаг страны
-                config_with_flags = replace_server_names_with_flags(config.raw)
-                conf.add_link(config_with_flags)
+                # Если все ок, добавляем конфиги из Xpert Panel с учетом реальной статистики
+                xpert_configs = xpert_service.get_active_configs()
+                
+                # Фильтруем сервера по региону пользователя
+                user_ip = extra_data.get('last_ip', None)
+                xpert_configs = filter_servers_by_region(xpert_configs, user_ip)
+                
+                # Фильтруем и берем только топ серверы
+                try:
+                    from app.xpert.ping_stats import ping_stats_service
+                    
+                    # Сначала фильтруем нездоровые
+                    xpert_configs = ping_stats_service.get_healthy_configs(xpert_configs)
+                    
+                    # Затем берем только топ-N
+                    top_limit = app_config.XPERT_TOP_SERVERS_LIMIT
+                    xpert_configs = ping_stats_service.get_top_configs(xpert_configs, top_limit)
+                    
+                except Exception as e:
+                    # Если статистика недоступна, используем оригинальные конфиги
+                    pass
+                
+                for config in xpert_configs:
+                    # Заменяем имя сервера на флаг страны
+                    config_with_flags = replace_server_names_with_flags(config.raw)
+                    conf.add_link(config_with_flags)
                 
     except Exception as e:
         # Если Xpert Panel не настроен, просто игнорируем

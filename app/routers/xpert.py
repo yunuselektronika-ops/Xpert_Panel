@@ -45,6 +45,165 @@ class StatsResponse(BaseModel):
     domain: str
 
 
+@router.get("/clusters")
+async def get_clusters():
+    """Получить все кластеры"""
+    try:
+        from app.xpert.cluster_service import cluster_service
+        clusters = cluster_service.get_all_clusters()
+        return {
+            "clusters": [
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "description": c.description,
+                    "servers_count": len(c.servers),
+                    "active_servers": sum(1 for s in c.servers if s.is_active),
+                    "created_at": c.created_at,
+                    "updated_at": c.updated_at,
+                    "is_active": c.is_active
+                }
+                for c in clusters
+            ],
+            "stats": cluster_service.get_cluster_stats()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/clusters")
+async def create_cluster(data: dict):
+    """Создать новый кластер"""
+    try:
+        from app.xpert.cluster_service import cluster_service
+        
+        name = data.get('name', '').strip()
+        description = data.get('description', '').strip()
+        
+        if not name:
+            raise HTTPException(status_code=400, detail="Cluster name is required")
+        
+        cluster_id = cluster_service.create_cluster(name, description)
+        return {"cluster_id": cluster_id, "message": "Cluster created successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/clusters/{cluster_id}/servers")
+async def add_server_to_cluster(cluster_id: str, data: dict):
+    """Добавить сервер в кластер"""
+    try:
+        from app.xpert.cluster_service import cluster_service
+        
+        ip = data.get('ip', '').strip()
+        domain = data.get('domain', '').strip()
+        host = data.get('host', '').strip()
+        sni = data.get('sni', '').strip()
+        port = data.get('port', 443)
+        country = data.get('country', '').strip()
+        
+        if not ip:
+            raise HTTPException(status_code=400, detail="IP address is required")
+        
+        success = cluster_service.add_server_to_cluster(
+            cluster_id, ip, domain, host, sni, port, country
+        )
+        
+        if success:
+            return {"message": "Server added successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Cluster not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/clusters/{cluster_id}/servers")
+async def get_cluster_servers(cluster_id: str):
+    """Получить сервера кластера"""
+    try:
+        from app.xpert.cluster_service import cluster_service
+        
+        clusters = cluster_service.get_all_clusters()
+        cluster = next((c for c in clusters if c.id == cluster_id), None)
+        
+        if not cluster:
+            raise HTTPException(status_code=404, detail="Cluster not found")
+        
+        return {
+            "cluster_id": cluster_id,
+            "cluster_name": cluster.name,
+            "servers": [
+                {
+                    "ip": s.ip,
+                    "domain": s.domain,
+                    "host": s.host,
+                    "sni": s.sni,
+                    "port": s.port,
+                    "country": s.country,
+                    "is_active": s.is_active,
+                    "last_check": s.last_check,
+                    "ping_ms": s.ping_ms
+                }
+                for s in cluster.servers
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/clusters/{cluster_id}/servers/{server_ip}/status")
+async def update_server_status(cluster_id: str, server_ip: str, data: dict):
+    """Обновить статус сервера"""
+    try:
+        from app.xpert.cluster_service import cluster_service
+        
+        is_active = data.get('is_active', True)
+        ping_ms = data.get('ping_ms', 0.0)
+        
+        success = cluster_service.update_server_status(server_ip, is_active, ping_ms)
+        
+        if success:
+            return {"message": "Server status updated successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Server not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/clusters/{cluster_id}")
+async def delete_cluster(cluster_id: str):
+    """Удалить кластер"""
+    try:
+        from app.xpert.cluster_service import cluster_service
+        
+        success = cluster_service.delete_cluster(cluster_id)
+        
+        if success:
+            return {"message": "Cluster deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Cluster not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/active-servers")
+async def get_active_servers():
+    """Получить все активные сервера для подписки"""
+    try:
+        from app.xpert.cluster_service import cluster_service
+        servers = cluster_service.get_active_servers()
+        
+        return {
+            "servers": [
+                {
+                    "ip": s.ip,
+                    "domain": s.domain,
+                    "host": s.host,
+                    "sni": s.sni,
+                    "port": s.port,
+                    "country": s.country,
+                    "ping_ms": s.ping_ms
+                }
+                for s in servers
+            ],
+            "total": len(servers)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 @router.get("/stats")
 async def get_stats():
     """Получение статистики Xpert Panel"""
