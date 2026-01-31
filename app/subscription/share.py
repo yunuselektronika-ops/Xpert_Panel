@@ -303,7 +303,8 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
     # Добавляем конфиги из Xpert Panel (с автоматической синхронизацией)
     try:
         from app.xpert.service import xpert_service
-        from app.xpert.cluster_service import cluster_service
+        from app.xpert.cluster_service import whitelist_service
+        from app.xpert.ip_filter import ip_filter
         from app.xpert.marzban_integration import marzban_integration
         
         # Автоматическая синхронизация с Marzban при генерации подписки
@@ -323,23 +324,51 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
         except Exception as sync_error:
             logger.warning(f"Auto-sync failed: {sync_error}")
         
-        # Получаем активные сервера из кластеров (ручная проверка)
-        cluster_servers = cluster_service.get_active_servers()
+        # Получаем разрешенные IP
+        allowed_ips = whitelist_service.get_all_allowed_ips()
         
-        # Если есть кластеры, используем только их
-        if cluster_servers:
-            logger.info(f"Using {len(cluster_servers)} servers from clusters")
+        # Если есть разрешенные IP, фильтруем сервера
+        if allowed_ips:
+            logger.info(f"Found {len(allowed_ips)} allowed IPs, filtering servers")
             
-            # Конвертируем кластерные сервера в конфиги
-            for server in cluster_servers:
-                # Создаем конфиг на основе данных кластера
-                config_raw = create_config_from_cluster_server(server, extra_data)
-                if config_raw:
+            # Получаем все конфиги из Xpert
+            if not app_config.XPERT_REQUIRE_ACTIVE_STATUS:
+                xpert_configs = xpert_service.get_active_configs()
+            else:
+                # Если пользователь неактивен, не добавляем Xpert конфиги
+                if user_status not in ['active', 'on_hold']:
+                    return conf.render(reverse=reverse)
+                    
+                # Если закончился трафик, не добавляем Xpert конфиги
+                if data_limit is not None and data_limit > 0 and used_traffic >= data_limit:
+                    return conf.render(reverse=reverse)
+                    
+                # Если истек срок, не добавляем Xpert конфиги
+                if expire is not None and expire > 0 and expire <= 0:
+                    return conf.render(reverse=reverse)
+                
+                xpert_configs = xpert_service.get_active_configs()
+            
+            # Фильтруем сервера по разрешенным IP
+            server_configs = [config.raw for config in xpert_configs]
+            
+            if server_configs:
+                logger.info(f"Filtering {len(server_configs)} servers by allowed IPs")
+                
+                # Фильтрация серверов
+                filtered_configs = ip_filter.filter_servers(server_configs)
+                
+                logger.info(f"Filtered result: {len(filtered_configs)}/{len(server_configs)} servers allowed")
+                
+                # Добавляем только разрешенные конфиги
+                for config_raw in filtered_configs:
                     config_with_flags = replace_server_names_with_flags(config_raw)
                     conf.add_link(config_with_flags)
+            else:
+                logger.info("No Xpert configs to filter")
         else:
-            # Если кластеров нет, используем обычные Xpert конфиги
-            logger.info("No cluster servers found, using regular Xpert configs")
+            # Если разрешенных IP нет, используем обычные Xpert конфиги
+            logger.info("No allowed IPs found, using regular Xpert configs")
             
             # Если проверка статуса отключена в настройках, всегда добавляем Xpert конфиги
             if not app_config.XPERT_REQUIRE_ACTIVE_STATUS:

@@ -1,187 +1,176 @@
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from datetime import datetime
 from dataclasses import dataclass, asdict
 
 logger = logging.getLogger(__name__)
 
 @dataclass
-class ClusterServer:
-    """Один сервер в кластере"""
+class AllowedIP:
+    """Разрешенный IP адрес"""
     ip: str
-    domain: str = ""
-    host: str = ""
-    sni: str = ""
-    port: int = 443
+    description: str = ""
     country: str = ""
     is_active: bool = True
-    last_check: str = ""
-    ping_ms: float = 0.0
+    added_at: str = ""
 
 @dataclass 
-class Cluster:
-    """Кластер серверов"""
+class IPWhitelist:
+    """Белый список IP адресов"""
     id: str
     name: str
     description: str
-    servers: List[ClusterServer]
+    allowed_ips: List[AllowedIP]
     created_at: str
     updated_at: str
     is_active: bool = True
 
-class ClusterService:
-    """Сервис управления кластерами серверов"""
+class WhitelistService:
+    """Сервис управления белым списком IP адресов"""
     
     def __init__(self):
-        self.clusters: Dict[str, Cluster] = {}
-        self.storage_file = "clusters.json"
-        self._load_clusters()
+        self.whitelists: Dict[str, IPWhitelist] = {}
+        self.storage_file = "ip_whitelist.json"
+        self._load_whitelists()
     
-    def _load_clusters(self):
-        """Загружает кластеры из файла"""
+    def _load_whitelists(self):
+        """Загружает белые списки из файла"""
         try:
             with open(self.storage_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                for cluster_id, cluster_data in data.items():
-                    servers = [ClusterServer(**s) for s in cluster_data['servers']]
-                    self.clusters[cluster_id] = Cluster(
-                        id=cluster_data['id'],
-                        name=cluster_data['name'],
-                        description=cluster_data['description'],
-                        servers=servers,
-                        created_at=cluster_data['created_at'],
-                        updated_at=cluster_data['updated_at'],
-                        is_active=cluster_data.get('is_active', True)
+                for whitelist_id, whitelist_data in data.items():
+                    ips = [AllowedIP(**ip) for ip in whitelist_data['allowed_ips']]
+                    self.whitelists[whitelist_id] = IPWhitelist(
+                        id=whitelist_data['id'],
+                        name=whitelist_data['name'],
+                        description=whitelist_data['description'],
+                        allowed_ips=ips,
+                        created_at=whitelist_data['created_at'],
+                        updated_at=whitelist_data['updated_at'],
+                        is_active=whitelist_data.get('is_active', True)
                     )
-                logger.info(f"Loaded {len(self.clusters)} clusters")
+                logger.info(f"Loaded {len(self.whitelists)} IP whitelists")
         except FileNotFoundError:
-            logger.info("No clusters file found, starting empty")
+            logger.info("No IP whitelist file found, starting empty")
         except Exception as e:
-            logger.error(f"Error loading clusters: {e}")
+            logger.error(f"Error loading IP whitelist: {e}")
     
-    def _save_clusters(self):
-        """Сохраняет кластеры в файл"""
+    def _save_whitelists(self):
+        """Сохраняет белые списки в файл"""
         try:
             data = {}
-            for cluster_id, cluster in self.clusters.items():
-                data[cluster_id] = {
-                    'id': cluster.id,
-                    'name': cluster.name,
-                    'description': cluster.description,
-                    'servers': [asdict(server) for server in cluster.servers],
-                    'created_at': cluster.created_at,
-                    'updated_at': cluster.updated_at,
-                    'is_active': cluster.is_active
+            for whitelist_id, whitelist in self.whitelists.items():
+                data[whitelist_id] = {
+                    'id': whitelist.id,
+                    'name': whitelist.name,
+                    'description': whitelist.description,
+                    'allowed_ips': [asdict(ip) for ip in whitelist.allowed_ips],
+                    'created_at': whitelist.created_at,
+                    'updated_at': whitelist.updated_at,
+                    'is_active': whitelist.is_active
                 }
             
             with open(self.storage_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            logger.info(f"Saved {len(self.clusters)} clusters")
+            logger.info(f"Saved {len(self.whitelists)} IP whitelists")
         except Exception as e:
-            logger.error(f"Error saving clusters: {e}")
+            logger.error(f"Error saving IP whitelist: {e}")
     
-    def create_cluster(self, name: str, description: str = "") -> str:
-        """Создает новый кластер"""
-        cluster_id = f"cluster_{len(self.clusters) + 1}_{int(datetime.now().timestamp())}"
+    def create_whitelist(self, name: str, description: str = "") -> str:
+        """Создает новый белый список IP"""
+        whitelist_id = f"whitelist_{len(self.whitelists) + 1}_{int(datetime.now().timestamp())}"
         
-        cluster = Cluster(
-            id=cluster_id,
+        whitelist = IPWhitelist(
+            id=whitelist_id,
             name=name,
             description=description,
-            servers=[],
+            allowed_ips=[],
             created_at=datetime.utcnow().isoformat(),
             updated_at=datetime.utcnow().isoformat()
         )
         
-        self.clusters[cluster_id] = cluster
-        self._save_clusters()
+        self.whitelists[whitelist_id] = whitelist
+        self._save_whitelists()
         
-        logger.info(f"Created cluster: {name} ({cluster_id})")
-        return cluster_id
+        logger.info(f"Created IP whitelist: {name} ({whitelist_id})")
+        return whitelist_id
     
-    def add_server_to_cluster(self, cluster_id: str, ip: str, domain: str = "", 
-                            host: str = "", sni: str = "", port: int = 443, 
-                            country: str = "") -> bool:
-        """Добавляет сервер в кластер"""
-        if cluster_id not in self.clusters:
-            logger.error(f"Cluster {cluster_id} not found")
+    def add_allowed_ip(self, whitelist_id: str, ip: str, description: str = "", country: str = "") -> bool:
+        """Добавляет разрешенный IP в белый список"""
+        if whitelist_id not in self.whitelists:
+            logger.error(f"IP whitelist {whitelist_id} not found")
             return False
         
-        server = ClusterServer(
+        allowed_ip = AllowedIP(
             ip=ip,
-            domain=domain,
-            host=host,
-            sni=sni,
-            port=port,
+            description=description,
             country=country,
-            last_check=datetime.utcnow().isoformat()
+            added_at=datetime.utcnow().isoformat()
         )
         
-        self.clusters[cluster_id].servers.append(server)
-        self.clusters[cluster_id].updated_at = datetime.utcnow().isoformat()
-        self._save_clusters()
+        self.whitelists[whitelist_id].allowed_ips.append(allowed_ip)
+        self.whitelists[whitelist_id].updated_at = datetime.utcnow().isoformat()
+        self._save_whitelists()
         
-        logger.info(f"Added server {ip} to cluster {cluster_id}")
+        logger.info(f"Added allowed IP {ip} to whitelist {whitelist_id}")
         return True
     
-    def get_active_servers(self) -> List[ClusterServer]:
-        """Получает все активные сервера из всех кластеров"""
-        active_servers = []
+    def get_all_allowed_ips(self) -> Set[str]:
+        """Получает все разрешенные IP адреса"""
+        allowed_ips = set()
         
-        for cluster in self.clusters.values():
-            if not cluster.is_active:
+        for whitelist in self.whitelists.values():
+            if not whitelist.is_active:
                 continue
                 
-            for server in cluster.servers:
-                if server.is_active:
-                    active_servers.append(server)
+            for ip in whitelist.allowed_ips:
+                if ip.is_active:
+                    allowed_ips.add(ip.ip)
         
-        logger.info(f"Found {len(active_servers)} active servers")
-        return active_servers
+        logger.info(f"Found {len(allowed_ips)} allowed IPs")
+        return allowed_ips
     
-    def update_server_status(self, ip: str, is_active: bool, ping_ms: float = 0.0):
-        """Обновляет статус сервера"""
-        for cluster in self.clusters.values():
-            for server in cluster.servers:
-                if server.ip == ip:
-                    server.is_active = is_active
-                    server.ping_ms = ping_ms
-                    server.last_check = datetime.utcnow().isoformat()
-                    cluster.updated_at = datetime.utcnow().isoformat()
-                    self._save_clusters()
-                    logger.info(f"Updated server {ip}: active={is_active}, ping={ping_ms}ms")
+    def update_ip_status(self, ip: str, is_active: bool):
+        """Обновляет статус IP"""
+        for whitelist in self.whitelists.values():
+            for allowed_ip in whitelist.allowed_ips:
+                if allowed_ip.ip == ip:
+                    allowed_ip.is_active = is_active
+                    whitelist.updated_at = datetime.utcnow().isoformat()
+                    self._save_whitelists()
+                    logger.info(f"Updated IP {ip}: active={is_active}")
                     return True
         
-        logger.warning(f"Server {ip} not found in any cluster")
+        logger.warning(f"IP {ip} not found in any whitelist")
         return False
     
-    def get_cluster_stats(self) -> Dict:
-        """Получает статистику по кластерам"""
+    def get_whitelist_stats(self) -> Dict:
+        """Получает статистику по белым спискам"""
         stats = {
-            'total_clusters': len(self.clusters),
-            'active_clusters': sum(1 for c in self.clusters.values() if c.is_active),
-            'total_servers': sum(len(c.servers) for c in self.clusters.values()),
-            'active_servers': sum(
-                sum(1 for s in c.servers if s.is_active) 
-                for c in self.clusters.values() if c.is_active
+            'total_whitelists': len(self.whitelists),
+            'active_whitelists': sum(1 for w in self.whitelists.values() if w.is_active),
+            'total_ips': sum(len(w.allowed_ips) for w in self.whitelists.values()),
+            'active_ips': sum(
+                sum(1 for ip in w.allowed_ips if ip.is_active) 
+                for w in self.whitelists.values() if w.is_active
             )
         }
         
         return stats
     
-    def delete_cluster(self, cluster_id: str) -> bool:
-        """Удаляет кластер"""
-        if cluster_id in self.clusters:
-            del self.clusters[cluster_id]
-            self._save_clusters()
-            logger.info(f"Deleted cluster {cluster_id}")
+    def delete_whitelist(self, whitelist_id: str) -> bool:
+        """Удаляет белый список"""
+        if whitelist_id in self.whitelists:
+            del self.whitelists[whitelist_id]
+            self._save_whitelists()
+            logger.info(f"Deleted IP whitelist {whitelist_id}")
             return True
         return False
     
-    def get_all_clusters(self) -> List[Cluster]:
-        """Получает все кластеры"""
-        return list(self.clusters.values())
+    def get_all_whitelists(self) -> List[IPWhitelist]:
+        """Получает все белые списки"""
+        return list(self.whitelists.values())
 
 # Глобальный экземпляр
-cluster_service = ClusterService()
+whitelist_service = WhitelistService()
