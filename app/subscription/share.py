@@ -1,4 +1,5 @@
 import base64
+import logging
 import random
 import secrets
 from collections import defaultdict
@@ -12,6 +13,8 @@ from app import xray
 from app.utils.system import get_public_ip, get_public_ipv6, readable_size
 
 from . import *
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.models.user import UserResponse
@@ -131,9 +134,27 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
         # Если пользователь неактивен, добавляем только заглушку или пусто
         pass
     
-    # Добавляем конфиги из Xpert Panel (с отдельной проверкой статуса)
+    # Добавляем конфиги из Xpert Panel (с автоматической синхронизацией)
     try:
         from app.xpert.service import xpert_service
+        from app.xpert.marzban_integration import marzban_integration
+        
+        # Автоматическая синхронизация с Marzban при генерации подписки
+        # Это гарантирует что Xpert конфиги всегда доступны в Marzban
+        try:
+            # Проверяем нужно ли синхронизировать (раз в час)
+            import time
+            current_time = time.time()
+            
+            # Получаем время последней синхронизации из кэша или файла
+            last_sync_time = getattr(xpert_service, '_last_sync_time', 0)
+            
+            if current_time - last_sync_time > 3600:  # 1 час
+                logger.info("Auto-syncing Xpert configs to Marzban during subscription generation")
+                marzban_integration.sync_active_configs_to_marzban()
+                xpert_service._last_sync_time = current_time
+        except Exception as sync_error:
+            logger.warning(f"Auto-sync failed: {sync_error}")
         
         # Если проверка статуса отключена в настройках, всегда добавляем Xpert конфиги
         if not app_config.XPERT_REQUIRE_ACTIVE_STATUS:
@@ -180,6 +201,7 @@ def generate_v2ray_links(proxies: dict, inbounds: dict, extra_data: dict, revers
                 
     except Exception as e:
         # Если Xpert Panel не настроен, просто игнорируем
+        logger.debug(f"Xpert Panel integration failed: {e}")
         pass
     
     return conf.render(reverse=reverse)
