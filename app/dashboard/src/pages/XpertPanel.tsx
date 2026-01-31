@@ -37,15 +37,17 @@ import {
   chakra,
   useBreakpointValue,
   Grid,
+  Textarea,
+  Badge,
 } from "@chakra-ui/react";
 import { Header } from "components/Header";
 import { Footer } from "components/Footer";
 import { FC, useEffect, useState } from "react";
-import { TrashIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
+import { TrashIcon, ArrowPathIcon, PlusIcon } from "@heroicons/react/24/outline";
 import { fetch } from "../service/http";
 import { getAuthToken } from "../utils/authStorage";
 
-const DeleteIcon = chakra(TrashIcon, { baseStyle: { w: 4, h: 4 } });
+const AddIcon = chakra(PlusIcon, { baseStyle: { w: 4, h: 4 } });
 const RepeatIcon = chakra(ArrowPathIcon, { baseStyle: { w: 4, h: 4 } });
 
 interface Source {
@@ -86,10 +88,32 @@ interface SourceCreate {
   priority: number;
 }
 
+interface Host {
+  host: string;
+  description: string;
+  country: string;
+  is_active: boolean;
+  added_at: string;
+}
+
+interface WhitelistCreate {
+  name: string;
+  description: string;
+}
+
+interface HostCreate {
+  host: string;
+  description: string;
+  country: string;
+}
+
 export const XpertPanel: FC = () => {
   const [sources, setSources] = useState<Source[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [configs, setConfigs] = useState<Config[]>([]);
+  const [whitelists, setWhitelists] = useState<Whitelist[]>([]);
+  const [selectedWhitelist, setSelectedWhitelist] = useState<Whitelist | null>(null);
+  const [whitelistHosts, setWhitelistHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [newSource, setNewSource] = useState<SourceCreate>({
@@ -98,8 +122,26 @@ export const XpertPanel: FC = () => {
     priority: 1,
   });
   const [testingUrl, setTestingUrl] = useState(false);
+  const [newWhitelist, setNewWhitelist] = useState<WhitelistCreate>({
+    name: "",
+    description: "",
+  });
+  const [newHost, setNewHost] = useState<HostCreate>({
+    host: "",
+    description: "",
+    country: "",
+  });
   const toast = useToast();
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  const { 
+    isOpen: isWhitelistOpen, 
+    onOpen: onWhitelistOpen, 
+    onClose: onWhitelistClose 
+  } = useDisclosure();
+  const { 
+    isOpen: isHostOpen, 
+    onOpen: onHostOpen, 
+    onClose: onHostClose 
+  } = useDisclosure();
 
   const loadData = async () => {
     setLoading(true);
