@@ -42,6 +42,7 @@ import {
 } from "@chakra-ui/react";
 import { Header } from "components/Header";
 import { Footer } from "components/Footer";
+import { WhitelistManager } from "components/WhitelistManager";
 import { FC, useEffect, useState } from "react";
 import { TrashIcon, ArrowPathIcon, PlusIcon } from "@heroicons/react/24/outline";
 import { fetch } from "../service/http";
@@ -404,6 +405,9 @@ export const XpertPanel: FC = () => {
             </CardBody>
           </Card>
         )}
+
+        {/* Whitelists */}
+        <WhitelistManager />
 
         {/* Sources */}
         <Card mt="4">
