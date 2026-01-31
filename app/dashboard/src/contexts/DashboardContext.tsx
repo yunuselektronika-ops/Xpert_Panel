@@ -6,6 +6,11 @@ import { getUsersPerPageLimitSize } from "utils/userPreferenceStorage";
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 
+type UsersResponse = {
+  users: User[];
+  total: number;
+};
+
 export type FilterType = {
   search?: string;
   limit?: number;
@@ -70,22 +75,20 @@ type DashboardStateType = {
   revokeSubscription: (user: User) => Promise<void>;
 };
 
-const fetchUsers = (query: FilterType): Promise<User[]> => {
+const fetchUsers = (query: FilterType): Promise<UsersResponse> => {
   for (const key in query) {
     if (!query[key as keyof FilterType]) delete query[key as keyof FilterType];
   }
   useDashboard.setState({ loading: true });
   return fetch("/users", { query })
-    .then((response: any) => {
-      // API возвращает {users: [], total: 0}, а нам нужен массив пользователей
-      const users = response.users || response || [];
+    .then((users: UsersResponse) => {
       useDashboard.setState({ users });
       return users;
     })
     .catch((error) => {
       console.error("Failed to fetch users:", error);
       useDashboard.setState({ users: { users: [], total: 0 } });
-      return [];
+      return { users: [], total: 0 };
     })
     .finally(() => {
       useDashboard.setState({ loading: false });
